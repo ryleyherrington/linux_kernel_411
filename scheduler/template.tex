@@ -1,0 +1,210 @@
+\documentclass[letterpaper,10pt]{article}
+
+\usepackage{graphicx}                                        
+\usepackage{amssymb}                                         
+\usepackage{amsmath}                                         
+\usepackage{amsthm}                                          
+
+\usepackage{alltt}                                           
+\usepackage{float}
+\usepackage{color}
+\usepackage{url}
+
+\usepackage{balance}
+\usepackage[TABBOTCAP, tight]{subfigure}
+\usepackage{enumitem}
+\usepackage{pstricks, pst-node}
+
+
+\usepackage{geometry}
+\geometry{textheight=8.5in, textwidth=6in}
+
+\newcommand{\cred}[1]{{\color{red}#1}}
+\newcommand{\cblue}[1]{{\color{blue}#1}}
+
+\usepackage{hyperref}
+\usepackage{geometry}
+
+\def\name{Ryley Herrington}
+
+%% The following metadata will show up in the PDF properties
+\hypersetup{
+  colorlinks = true,
+  urlcolor = black,
+  pdfauthor = {\name},
+  pdfkeywords = {cs411 ``kernel'' scheduling},
+  pdftitle = {CS 411: Scheduling the Kernel},
+  pdfsubject = {CS 411 Project 1},
+  pdfpagemode = UseNone
+}
+
+\begin{document}
+\begin{center}
+{\large CS411 Project 1: Scheduling Inside the Kernel } \\ % \\ = new line
+Ryley Herrington
+October 8, 2012
+\end{center}
+
+\section{Introduction}
+This project was supposed to teach us about the Linux kernel on a small level. It was a basic project to make us implement the round robin and fifo scheduling algorithms that had been stripped from the kernel. It was a fairly simple project because the comments were still in place explaining what was necessary to implement; the code just happened to be missing.   
+
+Round Robin scheduling is where a process is supposed to be run and gets added to the process queue. Each process will get an equal timeslice and then will move on to the next process in the queue. Then the last process that ran will be put on the back of the queue. 
+
+A FIFO scheduling algorithm is where processes are added to the queue when they are called, and will run until completion. Then when the process is done it is taken off the queue, then the next one runs until it completes. This differs from the Round Robin scheduling algorithm because there's not a maximum timeslice that is applied to the process; and other processes don't interrupt it when they're run.
+
+\section{Code Explanation}
+Besides the comments in the code, this program might require some explanation. Basically, we implemented the aforementioned algorithms inside the code that already existed but happened to miss some parts. We narrowed our search for code that implemented schedulers down to sched.c and sched\_rt.c because those were the only mentions to SCHED\_FF and SCHED\_RR. Once we narrowed it down to those files we scoured up and down for mentions of all the other scheduling algorithms that should've probably included FIFO and RR inside them, but were absent. We also looked for the flow of control when we forced the scheduling algorithm in a Virtual Machine (VM) and stepped through it with a debugger. While incredibly slow it did lead me to learn a lot about what a kernel does. 
+
+We looked in both of the files for these mentions and we also tried to approach the files in a way that would make sense. By following the flow of control with SCHED (FIFO or RR) in mind we could really think about what the different priorities should be and what the return values for important methods should be. The bulk of the issue was testing to see whether or not the program was correct because the sched\_setschedule method only works when the program is run as root. I will explain more in the testing section.
+
+\section{Testing}
+We tested our implementation multiple times both on regular Gentoo Linux machines, the original kernel that was put on the Squidly, and on a few different VM's that we hacked together with different systems. The main issue that kept coming up was that we didn't know whether or not we were forcing the scheduler to be in SCHED\_RR or if it was using the normal scheduling algorithm. See the appendicies for the sleeper.c and launcher.c code. While this wasn't the only way we tested it, it was the first way and it got a lot of the job done.  
+
+Basically, in sleeper.c we set the priority and the scheduler to use FIFO or RR and then we make it do a bunch of counting without anything else. It's just a time waster, and the rest of the program is pretty easy to understand. We print out the time, and the PID and the number it counts up to just to make sure we're doing it in the right order. But this is really just a dummy program that the launcher.c program calls. 
+
+The launcher program will fork and exec this sleeper program 5 times by default and then we can decide if it's doing the PID's in the correct order. The  
+
+\section{Revision Control Log}
+
+\hspace{\stretch{3}} 
+------------------------------------------------------------------------
+r5 | reids | 2012-10-07 15:19:57 -0700 (Sun, 07 Oct 2012) | 2 lines
+
+Fixing our typo, missing a variable
+
+------------------------------------------------------------------------
+r4 | herringr | 2012-10-05 16:26:50 -0700 (Fri, 05 Oct 2012) | 1 line
+
+Added changes to sched.c, search for /TEAM8
+------------------------------------------------------------------------
+r3 | herringr | 2012-10-05 15:20:33 -0700 (Fri, 05 Oct 2012) | 1 line
+
+Added changes to sched\_rt, search /TEAM8
+------------------------------------------------------------------------
+r2 | herringr | 2012-09-28 10:00:42 -0700 (Fri, 28 Sep 2012) | 1 line
+
+first commit
+------------------------------------------------------------------------
+r1 | reids | 2012-09-25 21:25:28 -0700 (Tue, 25 Sep 2012) | 2 lines
+
+adding a directory for project1
+------------------------------------------------------------------------
+\section{Appendix}
+\subsection{Sleeper.c}
+#include <sched.h>
+#include <linux/sched.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <errno.h>
+
+int check\_pri() {
+   // Since -1 is a legitimate return value, must clear and check "errno"
+   errno = 0;
+   int priority = getpriority(PRIO\_PROCESS, 0);
+   if (errno != 0)
+      perror("getpriority"), exit(-1);
+   return priority;
+}
+
+void set\_the\_priority() {
+   int new\_priority = 1;
+   if (setpriority(PRIO\_PROCESS, 0, new\_priority) != 0)
+      perror("setpriority"), exit(-1);
+}
+
+
+int check\_scheduler() {
+   int sched = sched\_getscheduler(0);
+   if (sched < 0)
+      perror("sched\_getscheduler"), exit(-1);
+   return sched;
+}
+
+void fix\_sched() {
+   struct sched\_param param = { 0 };
+   param.sched\_priority = 1;
+
+   //This is where you can set it to RR or FIFO
+
+   if (sched\_setscheduler(0, SCHED\_FIFO, &param) != 0) 
+      perror("sched\_setscheduler"), exit(-1);
+}
+
+void display\_sched\_and\_pri() {
+   printf("Priority currently set to %d\n", check_pri());
+
+   int sched = check\_scheduler();
+   char *sched\_name = " *** ERROR ***";
+   switch (sched) {
+      case SCHED\_OTHER: sched\_name = "SCHED\_OTHER"; break;
+      case SCHED\_BATCH: sched\_name = "SCHED\_BATCH"; break;
+      case SCHED\_IDLE:  sched\_name = "SCHED\_IDLE" ; break;
+      case SCHED\_RR:    sched\_name = "SCHED\_RR"   ; break;
+      case SCHED\_FIFO:  sched\_name = "SCHED\_FIFO" ; break;
+   }
+   printf("Scheduler currently set to %s\n", sched_name);
+}
+
+int main(int argc, char* argv[]) {
+   // I had trouble setting the priority via sched\_setscheduler()
+   // So, instead, I set it *first*.  Can't seem to change it later.
+    set\_the\_priority();
+    fix\_sched();
+    display\_sched\_and\_pri();
+    long length = argc>1 ? atol(argv[1]) : 400000000;
+    long i,counter=0;
+    long minor\_length = length/10;
+    for (i=0; i<length; i++) {
+        if (counter % minor_length == 0) {
+            struct timeval tv;
+            if (gettimeofday(&tv, 0) != 0){
+                perror("gettimeofday failed");
+                exit(-1);
+            }
+            printf("time = %9ld.%06ld pid: %d - counter: %ld\n ", (long)tv.tv_sec, (long)tv.tv_usec, getpid(), counter);
+        }
+        counter++;
+    }
+   
+   return 0;
+}
+
+\subsection{Launcher.c}
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <stdio.h>
+
+int main(int argc, char* argv[]) {
+	long num\_of\_children = argc>1 ? atol(argv[1]) : 5;
+
+	pid\_t child\_id;
+	for(int i = 0; i< num\_of\_children; i++){
+		switch ( (child\_id = fork()) ) {	
+		case -1:
+			perror("forking\n");
+			exit(-1);
+	
+		case 0: 	
+			execlp("sleeper", "sleeper", (char*)NULL);
+			perror("sleeper"); //will never be called if exec works
+			exit(-1);
+			break;
+	
+		default:
+			break;
+		}
+	}
+	for (int i=0; i<num\_of\_children; i++) {
+		int status;
+	    wait(&status);
+	}
+	return 0;
+}
+
+\end{document}

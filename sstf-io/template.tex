@@ -1,0 +1,242 @@
+\documentclass[letterpaper,10pt]{article}
+
+\usepackage{graphicx}                                        
+\usepackage{amssymb}                                         
+\usepackage{amsmath}                                         
+\usepackage{amsthm}                                          
+
+\usepackage{alltt}                                           
+\usepackage{float}
+\usepackage{color}
+\usepackage{url}
+
+\usepackage{balance}
+\usepackage[TABBOTCAP, tight]{subfigure}
+\usepackage{enumitem}
+\usepackage{pstricks, pst-node}
+
+
+\usepackage{geometry}
+\geometry{textheight=8.5in, textwidth=6in}
+
+\newcommand{\cred}[1]{{\color{red}#1}}
+\newcommand{\cblue}[1]{{\color{blue}#1}}
+
+\usepackage{hyperref}
+\usepackage{geometry}
+
+\def\name{Ryley Herrington}
+%\input{pygments.tex}
+
+%% The following metadata will show up in the PDF properties
+\hypersetup{
+  colorlinks = true,
+  urlcolor = black,
+  pdfauthor = {\name},
+  pdfkeywords = {cs411 ``kernel''},
+  pdftitle = {CS 411: Shortest Seek Time First I/O Scheduler},
+  pdfsubject = {CS 411 Project 2},
+  pdfpagemode = UseNone
+}
+
+\begin{document}
+\begin{center}
+{\large CS411 Project 2: Shortest Seek Time First I/O Scheduler} \\ % \\ = new line
+Ryley Herrington
+October 22, 2012
+\end{center}
+
+\section{Introduction}
+The goal of this assignment was to teach us about how the I/O  scheduler is implemented in the current kernel and how we can change the scheduler to dispatch different tasks. Instead of first in first out, we were supposed to find the task that has the shortest distance from where the head of the I/O scheduler is pointed. So the nearest sector would be dispatched before the next read call was executed, just as an example. 
+
+\section{Design}
+Personally we thought about implementing a red/black tree to sort through the incoming requests for the I/O, but when we thought through everything else that we would have to do, the amount of sorting we would do would be small enough that we could reason through it with a simpler data structure. 
+
+Also, I think it's important to note that we looked through the deadline I/O scheduler to get the idea for how to implement an rb-tree, but due to the difficulties that would involve we again decided it'd be better to use an easier data structure.
+
+We ended up making a doubly linked list to keep track of the incoming requests and we implemented an insertion sort on the linked list as well. Granted, there is some more overhead to using an insertion sort because you have to traverse the entire list before you insert. The tree is easier to traverse because you only have to traverse each level before you find it (O(log(n))), whereas with a list it's every node. But since we probably won't have more than a hundred requests at a time (usually less than 20 anyway, but let's be conservative), so traversing that little amount is not too hard. 
+
+Then we decided to implement this scheduler starting from noop-iosched.c and figured out what this was doing. We then changed the method names, and figured out the only two things we needed to change were the add\_request method and the dispatch method. These will be explained in the next section, but this was our design and how we decided to do it.
+
+\section{Code Explanation}
+Fairly easy to understand, but our sstf\_add\_request method would get our request queue, then we print out what request we're adding out to the kernel output. Then we check if the list is empty and if it is we just append the request to the end of the empty linked list without sorting because it's the only element. 
+
+The real trouble is if there's more than one in the list. But if we're adding the second item to the list we will just put it on the end as well. If we have more than two items we start to traverse the list and when we only add it to the list when the sector of the node we're pointing at is smaller than the sector number of the one we want to add, and the next node has a larger sector number. 
+
+In pseudo code: if( current request sector < new request sector AND current->next request sector > new request sector) THEN add to linked list right after current. 
+
+This handles most of the cases, but there were some more edge cases that we had to account for. But this is the gist. Also we have a count so that we can always see if there's only one thing in the list, or if there are two, or more than 2 so we can choose the correct algorithm quickly.
+
+In dispatch we were supposed to dispatch the shortest seek time request instead of just the next one that came in. Since we sorted the list by sector, the linked list is in order but we don't know if the request before it in the list or after it in the list is technically closer. 
+
+So we check to see if the list size is 1, in which case we dispatch the only one in the list. If the list is two or more long, we will basically find the difference between the current request that just finished and the sectors of the two that are above and below it in the list. If it's negative we account for that by basically making an absolute value function. 
+
+Then we dispatch the one that is closer to the one that just finished. There's very little else that was necessary. Granted there were some hiccups, but this got the job done and it works correctly. 
+
+\section{Testing}
+To test it we had many printk's in our code. The reason this was the easiest way to test (and the most comprehensive) is because when we tested the code by trying to reach different parts of the harddrive to force it to work hard, it wouldn't take up more than one cpu and would cache the sections. 
+
+It was hard to force it to choose sections from different sectors, so the printk's worked the best because on boot up it would access a bunch of sectors and we would read the message. I will put an output file in the appendix but I can explain what we saw here anyway. 
+
+The output file would show us that the list of current requests and their sectors, and then when it added another one we would update the list and print that out to show that add was adding it correctly and in order. When we were sure that was correct we started to check the dispatch order. So we printed out what it would dispatch, but we weren't sure why it was acting that way. So we started printing out the logic behind it and found our errors. 
+
+But if you look at it the output list was in order, and it would dispatch the next one based on whether or not the next or the previous node was closer to the current sector. We knew this was the logic, but we couldn't check it unless we printk'd it out to the dmesg. Then we made sure that we still dispatched all of them in the right order so we painstakenly went through the whole output messages several times (because the first time we didn't get them right so we'd fix something then rescan until we found a mistake) until it was perfect. That's how we tested it. 
+
+\section{What I learned}
+I learned how to put together a linked list and how to sort it more efficiently than when I was in 261. Then I learned how to change the scheduler in the kernel by echoing out sstf to the scheduler folder/file. I also learned how a kernel panics, how that leads to my panic, and ultimately how to fix it. And otherwise I learned that the sector in a harddrive is much larger than what I expected. The numbers of sectors I mean. 
+
+\section{Revision Control Log}
+
+\hspace{\stretch{3}} 
+
+------------------------------------------------------------------------ 
+
+r17 | reids | 2012-10-22 10:32:36 -0700 (Mon, 22 Oct 2012) | 2 lines 
+
+Cleaned up code, and adding in makefiles and kconfig 
+
+------------------------------------------------------------------------ 
+
+r16 | reids | 2012-10-20 22:25:29 -0700 (Sat, 20 Oct 2012) | 1 line 
+
+think it's working 
+
+------------------------------------------------------------------------ 
+
+r15 | herringr | 2012-10-20 17:29:17 -0700 (Sat, 20 Oct 2012) | 1 line 
+
+working somewhat... 
+
+------------------------------------------------------------------------ 
+
+r14 | reids | 2012-10-20 15:30:01 -0700 (Sat, 20 Oct 2012) | 1 line 
+
+turning off merges 
+
+------------------------------------------------------------------------ 
+
+r13 | reids | 2012-10-20 12:18:28 -0700 (Sat, 20 Oct 2012) | 2 lines 
+
+changed with some dispatcher code 
+
+------------------------------------------------------------------------ 
+
+r12 | herringr | 2012-10-19 19:38:57 -0700 (Fri, 19 Oct 2012) | 1 line 
+
+Changed sstf to have some more pseudo code and dispatch started. 
+
+------------------------------------------------------------------------ 
+
+r11 | herringr | 2012-10-19 19:31:03 -0700 (Fri, 19 Oct 2012) | 1 line 
+
+Working version without dispatch 
+
+------------------------------------------------------------------------ 
+
+r10 | reids | 2012-10-15 09:50:40 -0700 (Mon, 15 Oct 2012) | 4 lines 
+
+Adding project2  
+
+\section{Appendix}
+
+\subsection{Output Kernel Message}
+[   37.817002] TEAM8 : Printing List: 42258395,57724891,57724907,57727355,57727371,57764859,57792163,57794747,57795099,57796339,57835315,57880667,57888787,58511323,58512795,58512875,58513051,58545851,60870619,60870995,60872251,60872387,60988395,70832 
+
+[   39.909846] In dispatch. 
+
+[   39.909846] More than one item in queue to dispatch.  
+
+[   39.909846] diff\_prev = 57724891, Diff\_next = 16 
+
+[   39.909846] Diff\_next <= diff\_prev 
+
+[   39.909846] TEAM8 : Dispatching :57724891 
+
+[   39.909846] TEAM8 : Done dispatching. Queue count at 39In dispatch. 
+
+[   40.022403] More than one item in queue to dispatch.  
+
+[   40.022403] diff\_prev = 57724907, Diff\_next = 2448 
+
+[   40.022403] Diff\_next <= diff\_prev 
+
+[   40.022403] TEAM8 : Dispatching :57724907 
+
+[   40.022403] TEAM8 : Done dispatching. Queue count at 38In dispatch. 
+
+[   40.046401] More than one item in queue to dispatch.  
+
+[   40.046401] diff\_prev = 57727355, Diff\_next = 16 
+
+[   40.046401] Diff\_next <= diff\_prev 
+
+[   40.046401] TEAM8 : Dispatching :57727355 
+
+....
+
+[   40.672153] TEAM8 : Dispatching :86562067 
+
+[   40.672156] TEAM8 : Done dispatching. Queue count at 6In dispatch. 
+
+[   40.672688] More than one item in queue to dispatch.  
+
+[   40.672692] diff\_prev = 86724571, Diff\_next = 7962624 
+
+[   40.672695] Diff\_next <= diff\_prev 
+
+[   40.672698] TEAM8 : Dispatching :86724571 
+
+[   40.672701] TEAM8 : Done dispatching. Queue count at 5In dispatch. 
+
+[   40.806224] More than one item in queue to dispatch.  
+
+[   40.806228] diff\_prev = 94687195, Diff\_next = 112 
+
+[   40.806231] Diff\_next <= diff\_prev 
+
+[   40.806234] TEAM8 : Dispatching :94687195 
+
+[   40.806237] TEAM8 : Done dispatching. Queue count at 4In dispatch. 
+
+[   40.806692] More than one item in queue to dispatch.  
+
+[   40.806697] diff\_prev = 94687307, Diff\_next = 81808 
+
+[   40.806700] Diff\_next <= diff\_prev 
+
+[   40.806703] TEAM8 : Dispatching :94687307 
+
+[   40.806706] TEAM8 : Done dispatching. Queue count at 3In dispatch. 
+
+[   40.807184] More than one item in queue to dispatch.  
+
+[   40.807189] diff\_prev = 94769115, Diff\_next = 16 
+
+[   40.807191] Diff\_next <= diff\_prev 
+
+[   40.807194] TEAM8 : Dispatching :94769115 
+
+[   40.807198] TEAM8 : Done dispatching. Queue count at 2In dispatch. 
+
+[   40.807621] More than one item in queue to dispatch.  
+
+[   40.807626] diff\_prev = 94769131, Diff\_next = 25767264 
+
+[   40.807629] Diff\_next <= diff\_prev 
+
+[   40.807632] TEAM8 : Dispatching :94769131 
+
+[   40.807635] TEAM8 : Done dispatching. Queue count at 1In dispatch. 
+
+[   40.902069] Only one item in queue, no calcs needed. 
+
+[   40.902073] TEAM8 : Dispatching :69001867 
+
+[   40.902076] TEAM8 : Done dispatching. Queue count at 0In dispatch. 
+
+%\subsection{sstf-iosched.c}
+%input the pygmentized output of mt19937ar.c, using a (hopefully) unique name
+%this file only exists at compile time. Feel free to change that.
+%\input{__sstf-iosched.c.tex}
+
+\end{document}
